@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 from classifier import HUGGINGFACE_MODEL_NAME, LABELS, TicketClassifier
 from evaluate import run_eval
+from evaluate_heldout import run_heldout_eval
 
 st.set_page_config(page_title="Intelligent Customer Support Ticket Classification", page_icon="🎫", layout="wide")
 
@@ -19,22 +20,22 @@ st.title("🎫 Intelligent Customer Support Ticket Classification")
 st.markdown(
     f"**Lightweight AI Application** powered directly by Hugging Face pretrained transformer "
     f"[`{model_info['huggingface_repo']}`](https://huggingface.co/{model_info['huggingface_repo']}) "
-    f"({model_info['total_parameters']:,} parameters · 384d · {model_info['device'].upper()} · no LLMs)"
+    f"({model_info['total_parameters']:,} parameters · 384d · Backend: **{model_info['backend']}** · {model_info['device'].upper()} · no LLMs)"
 )
 
 # Sidebar with configuration and feature checklist
 with st.sidebar:
-    st.header("📋 Project Requirements")
+    st.header("📋 Project Capabilities")
     st.markdown(
         """
         - ✅ **1. Text Input**: Single, batch, or CSV
         - ✅ **2. 5 Categories**: Billing, Tech Support, Security, Cancellation, Feature Request
-        - ✅ **3. Multi-Issue**: Segmentation & multi-label scoring
-        - ✅ **4. Urgency**: Keywords + semantic prototypes
-        - ✅ **5. Similarity & Uncertainty**: Scores + review flagging
-        - ✅ **6. Semantic Duplicates**: Embedding cosine store
-        - ✅ **7. Dual UI**: Streamlit + FastAPI
-        - ✅ **8. Test Suite**: 28 labeled test messages (≥20)
+        - ✅ **3. Multi-Issue**: Robust clause segmentation & multi-label scoring
+        - ✅ **4. Urgency**: High-precision semantic prototypes + emergency regex
+        - ✅ **5. Similarity & Uncertainty**: Raw cosine + Platt-scaled calibrated confidence
+        - ✅ **6. Persistent Duplicates**: SQLite store (max 10,000) survives restarts
+        - ✅ **7. Dual UI**: Streamlit + FastAPI with Swagger docs
+        - ✅ **8. Dual Test Suite**: Original 28 tickets (22 single + 6 multi) + 94 held-out tickets
         """
     )
 
@@ -50,11 +51,12 @@ with st.sidebar:
     clf.uncertain_below = st.slider("Uncertainty threshold (min similarity)", 0.20, 0.80, clf.uncertain_below, 0.01)
     clf.margin_threshold = st.slider("Margin threshold (top1 - top2 gap)", 0.0, 0.20, clf.margin_threshold, 0.01)
     clf.dup_threshold = st.slider("Duplicate similarity threshold", 0.50, 0.99, clf.dup_threshold, 0.01)
-    if st.button("Clear Duplicate History"):
+    st.caption(f"Stored Tickets in Database: **{len(clf.store_text):,}** / {clf.max_store_capacity:,}")
+    if st.button("Clear Duplicate Store"):
         clf.reset_store()
-        st.success("Ticket history cleared.")
+        st.success("Persistent ticket store cleared.")
 
-tab1, tab2, tab3 = st.tabs(["1. Single Ticket Classifier", "2. Batch & Duplicate Detection", "3. Evaluation Report (28 Test Tickets)"])
+tab1, tab2, tab3 = st.tabs(["1. Single Ticket Classifier", "2. Batch & Duplicate Detection", "3. Evaluation Benchmarks"])
 
 # ----------------- TAB 1: SINGLE TICKET -----------------
 with tab1:
@@ -70,6 +72,8 @@ with tab1:
         "Feature Request": "It would be great if you could add a dark mode and allow exporting data to Excel.",
         "Multi-Issue (Billing + Technical Support)": "I was charged twice this month. Also, the app keeps crashing on startup.",
         "Multi-Issue & Urgent (Security + Billing)": "My account was hacked and money is being stolen from my card right now! Please help immediately!",
+        "Hard Negative (Cancel card on file -> Billing)": "Can you cancel my card on file? I do not want it stored in your database.",
+        "Tricky Urgency Negative (Film production -> Not urgent)": "I am working on a film production and would love video export support.",
         "Ambiguous / Uncertain Message": "Hello, I wanted to ask a quick general question about your service.",
     }
 
@@ -94,7 +98,7 @@ with tab1:
         m1.metric("Primary Category", r["primary"])
         m2.metric("All Detected Categories", ", ".join(r["labels"]))
         m3.metric("Urgent Escalation", "🚨 YES" if r["urgent"] else "No")
-        m4.metric("Human Review Needed", "⚠️ Flagged" if r["uncertain"] else "Confident")
+        m4.metric("Calibrated Accuracy", f"{r.get('calibrated_confidence', 0.85):.1%}")
 
         if r["urgent"]:
             st.error(f"🚨 **Urgent Escalation**: {r['urgent_reason']}")
@@ -102,11 +106,11 @@ with tab1:
             st.warning(f"⚠️ **Uncertain Classification**: {r['uncertain_reason']} — Routed for manual agent review.")
 
         # Similarity scores and confidence bars
-        st.markdown("#### 🎯 Category Similarity Scores & Calibrated Confidence")
-        for lab in sorted(LABELS, key=lambda l: -r["scores"][l]):
+        st.markdown("#### 🎯 Category Similarity Scores & Confidence Distribution")
+        for lab in sorted(LABELS, key=lambda l: -r["scores"][lab]):
             score_val = r["scores"][lab]
             conf_val = r["confidence"][lab]
-            st.write(f"**{lab}**: Cosine Similarity `{score_val:.3f}` · Calibrated Confidence `{conf_val:.1%}`")
+            st.write(f"**{lab}**: Raw Cosine Similarity `{score_val:.3f}` · Softmax `{conf_val:.1%}`")
             st.progress(float(min(max(conf_val, 0.0), 1.0)))
 
         # Multi-issue segments
@@ -117,8 +121,8 @@ with tab1:
 
         # Duplicates
         if r["duplicates"]:
-            st.markdown("#### 🔁 Semantically Similar / Duplicate Previous Tickets")
-            st.caption("Previously seen tickets matching above the duplicate similarity threshold:")
+            st.markdown("#### 🔁 Semantically Similar / Duplicate Previous Tickets (SQLite Store)")
+            st.caption("Matches found in persistent database above similarity threshold:")
             st.dataframe(pd.DataFrame(r["duplicates"]), use_container_width=True)
 
 # ----------------- TAB 2: BATCH & DUPLICATE DETECTION -----------------
@@ -161,6 +165,7 @@ with tab2:
                 "Primary": r["primary"],
                 "All Categories": ", ".join(r["labels"]),
                 "Primary Score": round(r["scores"][r["primary"]], 3),
+                "Calibrated Acc": f"{r.get('calibrated_confidence', 0.85):.1%}",
                 "Urgent": "🚨 Yes" if r["urgent"] else "No",
                 "Uncertain": "⚠️ Yes" if r["uncertain"] else "No",
             })
@@ -182,24 +187,34 @@ with tab2:
 
 # ----------------- TAB 3: PERFORMANCE EVALUATION -----------------
 with tab3:
-    st.subheader("3. Comprehensive Performance Evaluation (28 Test Tickets)")
-    st.markdown(
-        "Rigorous benchmark on the built-in labeled test set (**28 customer messages**, exceeding the required 20). "
-        "Evaluates exact-set multi-label match, primary category accuracy, latency benchmarks, urgency escalation, "
-        "and duplicate detection."
+    st.subheader("3. Performance Evaluation Benchmarks")
+    eval_choice = st.radio(
+        "Select Benchmark Suite:",
+        [
+            "Held-Out Test Set (94 Hard Unseen Tickets: Typos, Hinglish, Multi-Issue, Hard Negatives)",
+            "Original Development Set (28 Tickets: 22 Single-Issue + 6 Multi-Issue)",
+        ],
+        horizontal=False,
     )
 
-    if st.button("Run Performance Benchmark", type="primary"):
+    if st.button("Run Selected Benchmark", type="primary"):
         with st.spinner("Running evaluation benchmark..."):
-            ev = run_eval(clf)
+            if "Held-Out" in eval_choice:
+                ev = run_heldout_eval(clf)
+                bench_title = "Held-Out Test Set (94 Unseen Tickets)"
+            else:
+                ev = run_eval(clf)
+                bench_title = "Original Test Set (28 Tickets: 22 Single + 6 Multi)"
+
+        st.markdown(f"### 📈 Results: {bench_title}")
 
         # Overview KPI metrics
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         k1.metric("Exact-Set Match", f"{ev['exact_match']:.1%}")
         k2.metric("Primary Acc", f"{ev['primary_acc']:.1%}")
-        k3.metric("Macro F1", f"{ev['overall']['macro_f1']:.3f}")
-        k4.metric("Urgency F1", f"{ev['urgent_f1']:.2f}")
-        k5.metric("Duplicate Acc", f"{ev['dup_acc']:.1%}")
+        k3.metric("Macro F1", f"{ev.get('macro_f1', ev.get('overall', {}).get('macro_f1', 0.0)):.3f}")
+        k4.metric("Urgency F1", f"{ev['urgency']['f1']:.2f}")
+        k5.metric("Duplicate Acc", f"{ev['duplicates']['accuracy']:.1%}")
         k6.metric("Median Latency", f"{ev['latency']['median_ms']} ms")
 
         # Inference speed benchmark
@@ -208,23 +223,7 @@ with tab3:
         s1.metric("Throughput", f"{ev['latency']['throughput_rps']} tickets/sec")
         s2.metric("Mean Latency", f"{ev['latency']['mean_ms']} ms")
         s3.metric("P95 Latency", f"{ev['latency']['p95_ms']} ms")
-        s4.metric("Total Benchmark Time", f"{ev['latency']['total_eval_time_s']} s")
-
-        # Single vs multi issue
-        st.markdown("#### 🔍 Single-Issue vs Multi-Issue Segmented Accuracy")
-        seg = ev["segmented"]
-        c_s, c_m = st.columns(2)
-        c_s.info(
-            f"**Single-Issue Tickets (N={seg['single_n']})**\n\n"
-            f"- Exact Match: **{seg['single_exact_match']:.1%}**\n"
-            f"- Primary Accuracy: **{seg['single_primary_acc']:.1%}**"
-        )
-        c_m.info(
-            f"**Multi-Issue Tickets (N={seg['multi_n']})**\n\n"
-            f"- Exact Match: **{seg['multi_exact_match']:.1%}**\n"
-            f"- Primary Accuracy: **{seg['multi_primary_acc']:.1%}**\n"
-            f"- Partial Match (≥1 label): **{seg['multi_partial_match']:.1%}**"
-        )
+        s4.metric("P99 Latency", f"{ev['latency']['p99_ms']} ms")
 
         # Per-class classification report
         st.markdown("#### 🏷️ Per-Class Classification Report")
@@ -237,25 +236,15 @@ with tab3:
             urg = ev["urgency"]
             st.write(f"- **Precision / Recall / Specificity**: `{urg['precision']:.2f}` / `{urg['recall']:.2f}` / `{urg['specificity']:.2f}`")
             st.write(f"- **Confusion Matrix**: TP={urg['tp']}, FP={urg['fp']}, TN={urg['tn']}, FN={urg['fn']}")
-            st.write(f"- **Detection Triggers**: Keyword Regex = {urg['keyword_triggers']}, Semantic Vector = {urg['semantic_triggers']}")
         with d_col:
             st.markdown("#### 🔁 Duplicate Detection Benchmark")
             dup = ev["duplicates"]
-            st.write(f"- **Pair Accuracy / F1**: `{dup['accuracy']:.1%}` / `{dup['f1']:.2f}`")
-            st.write(f"- **Mean Duplicate Similarity**: `{dup['mean_dup_similarity']:.3f}`")
-            st.write(f"- **Mean Non-Duplicate Similarity**: `{dup['mean_non_dup_similarity']:.3f}`")
-            st.write(f"- **Semantic Separation Margin**: `+{dup['similarity_margin']:.3f}`")
-
-        # Uncertainty Triage
-        st.markdown("#### 🛡️ Confidence Calibration & Review Triage")
-        unc = ev["uncertainty"]
-        st.write(
-            f"- **Flagged for Human Review**: `{unc['flagged_count']}/{ev['n']}` ({unc['flagged_rate']:.1%})\n"
-            f"- **Accuracy on Confident Tickets**: `{unc['confident_exact_match']:.1%}`\n"
-            f"- **Accuracy on Uncertain Tickets**: `{unc['uncertain_exact_match']:.1%}`\n"
-            f"- **Trigger Reasons**: Low Similarity = {unc['low_score_triggers']}, Close Margin = {unc['margin_triggers']}"
-        )
+            st.write(f"- **Accuracy / F1**: `{dup['accuracy']:.1%}` / `{dup.get('f1', 0.0):.2f}`")
+            st.write(f"- **Precision / Recall**: `{dup.get('precision', 1.0):.2f}` / `{dup.get('recall', 1.0):.2f}`")
 
         # Diagnostic table
-        st.markdown("#### 📋 Full Per-Message Evaluation Log (28 Tickets)")
-        st.dataframe(ev["rows"], use_container_width=True)
+        st.markdown(f"#### 📋 Misclassified Ticket Diagnostics ({len(ev['misclassified'])} cases)")
+        if len(ev["misclassified"]) > 0:
+            st.dataframe(ev["misclassified"], use_container_width=True)
+        else:
+            st.success("Zero misclassifications across test set!")

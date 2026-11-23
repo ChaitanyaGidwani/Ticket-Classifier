@@ -19,3 +19,10 @@ ENV/
 # Local archives and redundant unzipped folders
 *.zip
 ticket-classifier/
+
+# Runtime caches and databases
+.cache/
+.pytest_cache/
+*.db
+data/*.db
+

@@ -5,14 +5,21 @@ Provides high-throughput REST endpoints alongside the Streamlit UI:
   - Batch ticket classification
   - Semantic duplicate pair detection
   - Dynamic threshold configuration
-  - Duplicate store history management
+  - Persistent duplicate store history management
   - Performance evaluation endpoint
   - Hugging Face model metadata & health checks
+
+Note on Rate Limiting:
+  Recommended reverse-proxy rate limiting (e.g., via Nginx or Cloudflare):
+  100 requests/minute per client IP for /classify; 20 requests/minute for /batch.
+  No external or paid LLM APIs are used — inference is 100% self-hosted and CPU-friendly.
 """
 from contextlib import asynccontextmanager
+import logging
+import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import pandas as pd
@@ -20,6 +27,10 @@ from pydantic import BaseModel, Field
 import uvicorn
 
 from classifier import HUGGINGFACE_MODEL_NAME, LABELS, TicketClassifier
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("ticket_classifier_api")
 
 
 # ---------- Pydantic Schemas ----------
@@ -35,8 +46,8 @@ class DuplicateDetail(BaseModel):
 
 
 class ClassifyRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="Customer message or support ticket text")
-    check_duplicates: bool = Field(True, description="Whether to check and record this ticket in the duplicate history store")
+    text: str = Field(..., min_length=1, max_length=20000, description="Customer message or support ticket text (max 20,000 characters)")
+    check_duplicates: bool = Field(True, description="Whether to check and record this ticket in the persistent duplicate store")
 
     model_config = {
         "json_schema_extra": {
@@ -54,6 +65,7 @@ class ClassifyResponse(BaseModel):
     labels: List[str]
     scores: Dict[str, float]
     confidence: Dict[str, float]
+    calibrated_confidence: Optional[float] = Field(None, description="Platt-scaled empirical accuracy estimate based on margin and score")
     margin: float
     uncertain: bool
     uncertain_reason: str
@@ -64,8 +76,8 @@ class ClassifyResponse(BaseModel):
 
 
 class BatchClassifyRequest(BaseModel):
-    texts: List[str] = Field(..., min_length=1, description="List of ticket texts to classify")
-    check_duplicates: bool = Field(False, description="Whether to match/store tickets against the persistent duplicate history")
+    texts: List[str] = Field(..., min_length=1, max_length=1000, description="List of ticket texts to classify (max 1,000 per batch)")
+    check_duplicates: bool = Field(False, description="Whether to match/store tickets against the persistent duplicate store")
     detect_batch_duplicates: bool = Field(True, description="Whether to discover duplicate pairs within this submitted batch")
 
     model_config = {
@@ -98,7 +110,7 @@ class BatchClassifyResponse(BaseModel):
 
 
 class DuplicateSearchRequest(BaseModel):
-    texts: List[str] = Field(..., min_length=2, description="List of tickets to check against each other")
+    texts: List[str] = Field(..., min_length=2, max_length=1000, description="List of tickets to compare for duplicates")
     threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Optional custom duplicate similarity threshold (defaults to classifier dup_threshold)")
 
 
@@ -122,11 +134,13 @@ class ModelInfoResponse(BaseModel):
     model_name: str
     huggingface_repo: str
     architecture: str
+    backend: str
     hidden_dimension: int
     total_parameters: int
     device: str
     supported_labels: List[str]
     stored_tickets_count: int
+    store_capacity: int
     thresholds: ThresholdsConfig
 
 
@@ -137,11 +151,11 @@ classifier_instance: Optional[TicketClassifier] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global classifier_instance
-    # Initialize the classifier at startup
+    logger.info("Initializing TicketClassifier singleton...")
     classifier_instance = TicketClassifier()
     app.state.classifier = classifier_instance
+    logger.info("TicketClassifier initialized successfully.")
     yield
-    # Cleanup if needed
     classifier_instance = None
 
 
@@ -151,9 +165,9 @@ app = FastAPI(
         "Production-ready, lightweight support ticket classifier powered directly by "
         f"Hugging Face transformers (`{HUGGINGFACE_MODEL_NAME}`). "
         "Provides fast CPU inference, multi-issue segmentation, urgency detection, "
-        "semantic duplicate matching, and confidence threshold tuning."
+        "persistent semantic duplicate store, and confidence threshold tuning."
     ),
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -164,6 +178,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.perf_counter()
+    response: Response = await call_next(request)
+    duration_ms = (time.perf_counter() - start_time) * 1000.0
+    logger.info(f"{request.method} {request.url.path} -> {response.status_code} ({duration_ms:.2f}ms)")
+    return response
 
 
 def get_clf() -> TicketClassifier:
@@ -202,6 +225,7 @@ def root():
         "docs_url": "/docs",
         "health_url": "/health",
         "labels": clf.labels,
+        "rate_limiting": "Recommended: 100 req/min per IP at reverse proxy level",
     }
 
 
@@ -214,11 +238,13 @@ def health():
         model_name=clf.model_name,
         huggingface_repo=info["huggingface_repo"],
         architecture=info["architecture"],
+        backend=info.get("backend", "PyTorch"),
         hidden_dimension=info["hidden_dimension"],
         total_parameters=info["total_parameters"],
         device=info["device"],
         supported_labels=clf.labels,
         stored_tickets_count=len(clf.store_text),
+        store_capacity=info.get("store_capacity", 10000),
         thresholds=ThresholdsConfig(
             label_threshold=clf.label_threshold,
             uncertain_below=clf.uncertain_below,
@@ -233,12 +259,13 @@ def health():
 @app.post("/classify", response_model=ClassifyResponse, tags=["Classification"])
 def classify_ticket(req: ClassifyRequest):
     clf = get_clf()
-    if not req.text.strip():
+    cleaned = req.text.strip()
+    if not cleaned:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ticket text cannot be empty or blank.",
         )
-    result = clf.classify(req.text, check_duplicates=req.check_duplicates)
+    result = clf.classify(cleaned, check_duplicates=req.check_duplicates)
     return result
 
 
@@ -249,7 +276,7 @@ def batch_classify(req: BatchClassifyRequest):
     if not filtered_texts:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid ticket texts provided in batch.",
+            detail="No valid non-empty ticket texts provided in batch.",
         )
 
     results = [clf.classify(t, check_duplicates=req.check_duplicates) for t in filtered_texts]
@@ -285,7 +312,6 @@ def find_duplicates(req: DuplicateSearchRequest):
             detail="At least 2 non-empty tickets are required to search for duplicates.",
         )
 
-    # Save original threshold if custom threshold supplied
     orig_threshold = clf.dup_threshold
     threshold_used = req.threshold if req.threshold is not None else orig_threshold
     try:
