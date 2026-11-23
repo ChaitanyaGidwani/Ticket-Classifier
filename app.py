@@ -9,11 +9,11 @@ st.set_page_config(page_title="Intelligent Customer Support Ticket Classificatio
 
 
 @st.cache_resource(show_spinner="Loading pretrained Hugging Face model…")
-def load():
+def load(labels_signature: str = ""):
     return TicketClassifier()
 
 
-clf = load()
+clf = load(",".join(LABELS))
 model_info = clf.get_model_info()
 
 # Header & Objective
@@ -131,9 +131,10 @@ with tab1:
 
         # Similarity scores and confidence bars
         st.markdown("#### 🎯 Category Similarity Scores & Confidence Distribution")
-        for lab in sorted(LABELS, key=lambda l: -r["scores"][l]):
-            score_val = r["scores"][lab]
-            conf_val = r["confidence"][lab]
+        score_keys = list(r.get("scores", {}).keys()) or list(LABELS)
+        for lab in sorted(score_keys, key=lambda l: -r["scores"].get(l, 0.0)):
+            score_val = r["scores"].get(lab, 0.0)
+            conf_val = r.get("confidence", {}).get(lab, 0.0)
             st.write(f"**{lab}**: Raw Cosine Similarity `{score_val:.3f}` · Softmax `{conf_val:.1%}`")
             st.progress(float(min(max(conf_val, 0.0), 1.0)))
 

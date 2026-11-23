@@ -205,8 +205,8 @@ SEEDS = {
         "Driver dropped the package at the wrong apartment door",
         "How do I provide specific gate entry instructions for the delivery courier?",
         "Tracking number returns invalid or shipment information not found",
-        "Can I choose a specific weekend morning delivery time window?",
-        "Signature was required but nobody rang our doorbell for package delivery",
+        "Where can I view my past order history, previous orders, and tracking status?",
+        "mera purana order kaise dikhega order history aur tracking status dekhna hai",
     ],
 }
 
