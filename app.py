@@ -108,7 +108,7 @@ with tab1:
 
         # Similarity scores and confidence bars
         st.markdown("#### 🎯 Category Similarity Scores & Confidence Distribution")
-        for lab in sorted(LABELS, key=lambda l: -r["scores"][lab]):
+        for lab in sorted(LABELS, key=lambda l: -r["scores"][l]):
             score_val = r["scores"][lab]
             conf_val = r["confidence"][lab]
             st.write(f"**{lab}**: Raw Cosine Similarity `{score_val:.3f}` · Softmax `{conf_val:.1%}`")
