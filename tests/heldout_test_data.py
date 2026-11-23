@@ -165,6 +165,20 @@ ALL_HELDOUT_DATA = [
     T("Can you add a custom webhook event when a customer status changes?", ["Feature Request"]),
     T("An automated spell-check and grammar suggestion tool would be super useful.", ["Feature Request"]),
 
+    # ==================== DELIVERY ISSUE (SINGLE) ====================
+    T("I want to reschedule the delivery of my order to tomorrow afternoon.", ["Delivery Issue"]),
+    T("The tracking link shows delivered but no package was left at my front door.", ["Delivery Issue"]),
+    T("Can I change the delivery address for order #8841 before it dispatches?", ["Delivery Issue"]),
+    T("My shipment arrived in a damaged box and the contents inside are broken.", ["Delivery Issue"]),
+    T("Estimated delivery was three days ago and the package is still delayed in transit.", ["Delivery Issue"]),
+    T("Courier was unable to access my building gate, how do I schedule redelivery?", ["Delivery Issue"]),
+    T("I need expedited express shipping or overnight delivery for my parcel.", ["Delivery Issue"]),
+    T("Wrong item was delivered in my parcel, I received someone else's order.", ["Delivery Issue"]),
+    T("delivery reschedule karni hai kal ke liye time slot change", ["Delivery Issue"]),  # Hinglish
+    T("mera parcel deliver nahi hua tracking shows stuck", ["Delivery Issue"]),  # Hinglish
+    T("package delivery issue", ["Delivery Issue"]),  # Short / ambiguous
+    T("Customs clearance holds are delaying my international package arrival.", ["Delivery Issue"]),
+
     # ==================== MULTI-ISSUE TICKETS (2 LABELS) ====================
     T("I was charged twice on my credit card; also the mobile app is crashing on launch.", ["Billing", "Technical Support"]),
     T("My invoice amount is wrong, and I also want to cancel my renewal at month end.", ["Billing", "Cancellation"]),
@@ -201,6 +215,8 @@ ALL_HELDOUT_DATA = [
     T("Our card was billed after we asked to terminate our contract last month.", ["Billing", "Cancellation"]),
     T("There is a cross-site scripting bug in the comment box, and can you add a markdown preview?", ["Security", "Feature Request"]),
     T("We are canceling our contract because your security audit documentation is missing.", ["Cancellation", "Security"]),
+    T("My package never arrived, and I want a full refund credited to my card.", ["Delivery Issue", "Billing"]),
+    T("The parcel was delivered damaged. Also the mobile app crashed when opening camera.", ["Delivery Issue", "Technical Support"]),
 
     # ==================== URGENT TICKETS & TRICKY FALSE POSITIVES ====================
     T("CRITICAL: Our production database is down and all customer traffic is failing!", ["Technical Support"], True),
@@ -220,10 +236,10 @@ ALL_HELDOUT_DATA = [
 
 # Deterministic Stratified-style split into VALIDATION_SET and TEST_SET_HELDOUT:
 # Alternating elements ensures identical class balance, multi-issue ratio, and hard cases across both sets.
-VALIDATION_SET = ALL_HELDOUT_DATA[0::2]   # 94 tickets
-TEST_SET_HELDOUT = ALL_HELDOUT_DATA[1::2] # 94 tickets
+VALIDATION_SET = ALL_HELDOUT_DATA[0::2]   # 101 tickets
+TEST_SET_HELDOUT = ALL_HELDOUT_DATA[1::2] # 101 tickets
 
-# Held-out duplicate detection benchmark pairs (20 pairs)
+# Held-out duplicate detection benchmark pairs (24 pairs)
 # Formatted as: (ticket_a, ticket_b, is_duplicate)
 HELDOUT_DUP_PAIRS = [
     # True duplicates (paraphrases / near-duplicates)
@@ -237,6 +253,8 @@ HELDOUT_DUP_PAIRS = [
     ("How do I stop auto-renewal so my card won't be charged next year?", "I want to turn off annual auto-renewal to prevent future card charges.", True),
     ("Is there any plan to support Portuguese and Spanish localization?", "Any plans for multi-language translation in Spanish and Portuguese?", True),
     ("We received a flood of password reset emails that nobody on our team requested.", "Spam password reset requests are arriving that our employees never triggered.", True),
+    ("I want to reschedule the delivery of my order to next Monday.", "Can I change my order delivery date and reschedule shipment?", True),
+    ("The courier tracking shows delivered but my parcel never arrived.", "My package tracking says delivered, however I never received the shipment.", True),
 
     # Hard negatives (surface similarity or shared keywords, but DIFFERENT semantics)
     ("Can you cancel my card on file? I do not want it stored in your database.", "Please cancel my subscription and close my account at the end of the month.", False),
@@ -249,4 +267,6 @@ HELDOUT_DUP_PAIRS = [
     ("We are switching to a competitor and want to export our data before closing.", "Can you allow exporting analytics data directly to Google BigQuery or Snowflake?", False),
     ("The rich text editor deletes bold formatting when pasting from external editor.", "Keyboard shortcut Ctrl+K no longer opens the quick command palette.", False),
     ("Do you accept PayPal or crypto for enterprise billing?", "How secure is your refund authorization process against employee fraud?", False),
+    ("I want to cancel the delivery of my package before it ships.", "Please cancel my recurring monthly subscription.", False),
+    ("Can I track the real-time courier location for my delivery?", "How do I track usage and query count on our billing dashboard?", False),
 ]

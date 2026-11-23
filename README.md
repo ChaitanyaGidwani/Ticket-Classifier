@@ -15,13 +15,13 @@ A production-hardened, CPU-optimized AI application that automatically categoriz
 | # | Requirement | Implementation Details | Verification / Where to Test |
 |---|---|---|---|
 | **1** | **Accept customer messages as text input** | Supports free-form text input, quick-load preset examples, batch multi-line paste, CSV uploads (`text` column), and REST JSON payloads with 20k-character boundary protection. | Streamlit Tab 1 & Tab 2; FastAPI `POST /classify` |
-| **2** | **Classify each message into 5 categories** (`Billing`, `Technical Support`, `Security`, `Cancellation`, `Feature Request`) | Few-shot prototype scoring using 384-dimensional dense vectors generated directly via Hugging Face `transformers` (mean pooling + L2 normalization). Seeds expanded to 25 diverse examples per class including hard negatives. | `classifier.py` (`LABELS`, `SEEDS`), `app.py`, `api.py` |
+| **2** | **Classify each message into 6 categories** (`Billing`, `Technical Support`, `Security`, `Cancellation`, `Feature Request`, `Delivery Issue`) | Few-shot prototype scoring using 384-dimensional dense vectors generated directly via Hugging Face `transformers` (mean pooling + L2 normalization). Seeds expanded to 25 diverse examples per class including hard negatives, Hinglish, and eCommerce delivery/rescheduling workflows. | `classifier.py` (`LABELS`, `SEEDS`), `app.py`, `api.py` |
 | **3** | **Support messages containing multiple issues** | Enhanced `split_issues()` segments compound tickets using conjunction and clause boundaries while preserving decimal currencies (`$12.50`) and abbreviations (`e.g.`, `vs.`). Each clause is scored independently. | `classifier.py` (`split_issues`), Streamlit Tab 1, `tests/test_classifier.py` |
 | **4** | **Identify potentially urgent tickets** | Dual-channel escalation combining semantic similarity against 12 `URGENT_SEEDS` prototypes (`urgent_threshold=0.55`) and contextual regex. Eliminates false positives from isolated words like "production" or "deadline". | `classifier.py` (`URGENT_SEEDS`, `URGENT_RE`), Streamlit 🚨 alert |
 | **5** | **Display similarity scores and flag uncertain classifications** | Calibrated confidence estimation using temperature scaling ($T=0.12$) and Platt scaling against validation margins. Flags low top-1 score (<0.26) or close margins (<0.02) for human triage. | Streamlit progress bars & triage badge; FastAPI `calibrated_confidence` & `uncertain` |
 | **6** | **Detect semantically similar or duplicate tickets** | Persistent, capped SQLite duplicate store (`data/ticket_store.db`, max 10,000 tickets, LRU/FIFO eviction) that survives server restarts, paired with intra-batch discovery via `find_duplicate_pairs()`. | Streamlit Tab 1 ("Duplicate History") & Tab 2; FastAPI `POST /duplicates` |
 | **7** | **Provide a simple interface using Streamlit or FastAPI** | Both interfaces provided: full-featured interactive Streamlit web dashboard and high-performance async FastAPI service with OpenAPI / Swagger docs. | `streamlit run app.py` (port 8501) and `uvicorn api:app --reload` (port 8000) |
-| **8** | **Include at least 20 labeled test messages & report performance** | Evaluated on **both** the original 28 benchmark tickets (22 single-issue + 6 multi-issue) and a new **188-ticket held-out suite** (94 validation, 94 test) featuring typos, Hinglish, and hard negatives. | `python evaluate.py` and `python evaluate_heldout.py --split test` |
+| **8** | **Include at least 20 labeled test messages & report performance** | Evaluated on **both** the expanded 32 benchmark tickets (25 single-issue + 7 multi-issue) and a comprehensive **202-ticket held-out suite** (101 validation, 101 test) featuring typos, Hinglish, delivery logistics, and hard negatives. | `python evaluate.py` and `python evaluate_heldout.py --split test` |
 
 ---
 
@@ -119,7 +119,7 @@ make docker-run    # Run containerized application
 streamlit run app.py
 ```
 Open [http://localhost:8501](http://localhost:8501) in your browser:
-- **Tab 1: Single Ticket Classifier**: Test custom or preset tickets (Billing, Tech Support, Security, Cancellation, Feature Request, Hinglish, Multi-Issue, Urgent, Ambiguous). Inspect clause decomposition, calibrated confidence meters, and persistent duplicate history.
+- **Tab 1: Single Ticket Classifier**: Test custom or preset tickets (Billing, Tech Support, Security, Cancellation, Feature Request, Delivery Issue, Hinglish, Multi-Issue, Urgent, Ambiguous). Inspect clause decomposition, calibrated confidence meters, and persistent duplicate history.
 - **Tab 2: Batch & Duplicate Discovery**: Classify multiple tickets at once or upload a CSV file to group semantically similar clusters.
 - **Tab 3: Dual Benchmark Runner**: Run both the original 28-ticket benchmark and the 94-ticket held-out evaluation directly in the UI.
 
@@ -214,7 +214,7 @@ docker run -p 8000:8000 -p 8501:8501 ticket-classifier:latest
 │   ├── tune_thresholds.py   # Hyperparameter grid search optimizer
 │   └── export_onnx.py       # ONNX export and INT8 quantization script
 └── tests/
-    ├── heldout_test_data.py # 188 labeled held-out tickets (94 validation, 94 test)
+    ├── heldout_test_data.py # 202 labeled held-out tickets (101 validation, 101 test)
     ├── test_classifier.py   # Classifier unit tests
     └── test_api.py          # FastAPI endpoint integration tests
 ```

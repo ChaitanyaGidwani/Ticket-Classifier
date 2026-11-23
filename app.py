@@ -31,7 +31,7 @@ with st.sidebar:
     st.markdown(
         """
         - ✅ **1. Text Input**: Single, batch, or CSV
-        - ✅ **2. 5 Categories**: Billing, Tech Support, Security, Cancellation, Feature Request
+        - ✅ **2. 6 Categories**: Billing, Tech Support, Security, Cancellation, Feature Request, Delivery Issue
         - ✅ **3. Multi-Issue**: Robust clause segmentation & multi-label scoring
         - ✅ **4. Urgency**: High-precision semantic prototypes + emergency regex
         - ✅ **5. Similarity & Uncertainty**: Raw cosine + Platt-scaled calibrated confidence
@@ -82,7 +82,9 @@ with tab1:
         "Security Alert (Urgent)": "Someone changed my password and I got an unauthorized login notification from another country!",
         "Cancellation Request": "Please cancel my subscription and close my account at the end of this billing cycle.",
         "Feature Request": "It would be great if you could add a dark mode and allow exporting data to Excel.",
+        "Delivery Issue (Reschedule / Tracking)": "I want to reschedule the delivery of my order to tomorrow afternoon.",
         "Multi-Issue (Billing + Technical Support)": "I was charged twice this month. Also, the app keeps crashing on startup.",
+        "Multi-Issue (Delivery + Billing)": "My package never arrived. Also, I was charged twice on my invoice.",
         "Multi-Issue & Urgent (Security + Billing)": "My account was hacked and money is being stolen from my card right now! Please help immediately!",
         "Hard Negative (Cancel card on file -> Billing)": "Can you cancel my card on file? I do not want it stored in your database.",
         "Tricky Urgency Negative (Film production -> Not urgent)": "I am working on a film production and would love video export support.",

@@ -33,7 +33,14 @@ logger = logging.getLogger("ticket_classifier")
 HUGGINGFACE_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 MODEL_NAME = HUGGINGFACE_MODEL_NAME
 
-LABELS = ["Billing", "Technical Support", "Security", "Cancellation", "Feature Request"]
+LABELS = [
+    "Billing",
+    "Technical Support",
+    "Security",
+    "Cancellation",
+    "Feature Request",
+    "Delivery Issue",
+]
 
 # ----------------- EXPANDED & BALANCED PROTOTYPE SEEDS -----------------
 # 20-25 diverse examples per category including varied phrasing, domain coverage,
@@ -70,7 +77,7 @@ SEEDS = {
         "The app crashes every time I open it on startup",
         "I cannot log in, the page keeps loading forever without opening",
         "The website is showing a 500 internal server error",
-        "Notifications stopped working after the latest software update",
+        "Notifications stopped working or push alerts are delayed after software update",
         "The file upload fails with a network timeout error message",
         "The dashboard is very slow and sometimes does not load data",
         "I am unable to sync my data between my phone and laptop",
@@ -83,7 +90,7 @@ SEEDS = {
         "Dropdown menu does not open or respond on mobile touch screens",
         "Screen turns completely blank or black after maximizing the chart widget",
         "Image upload hangs at ninety-nine percent and fails with network error",
-        "Cancel my support ticket #8812, the bug resolved itself after restart",
+        "System emails and notifications are not arriving in my email inbox",
         "Session tokens expire prematurely after only five minutes of inactivity",
         "Keyboard shortcut Ctrl+K no longer opens the quick command palette",
         "app bar bar crash ho raha hai kholte hi screen freeze",
@@ -173,6 +180,33 @@ SEEDS = {
         "Add a progress bar indicator during large batch uploads and CSV imports",
         "Can you provide an API endpoint to programmatically query usage statistics?",
         "Feature request: customizable keyboard shortcuts for common workflow actions",
+    ],
+    "Delivery Issue": [
+        "I want to reschedule the delivery to a different date or time",
+        "Where is my package and what is the current tracking status?",
+        "My order has not arrived yet, it was scheduled for delivery yesterday",
+        "The courier marked my package as delivered but I never received it",
+        "Can I update or change the shipping address for my pending order?",
+        "The package arrived damaged, opened, or broken in transit",
+        "Delivery driver could not find my address or gate code",
+        "My shipment is stuck in transit at the distribution facility",
+        "The estimated shipping or parcel delivery date keeps getting delayed repeatedly",
+        "I need expedited express shipping or overnight delivery for my order",
+        "The wrong product or missing item was delivered in my parcel",
+        "Courier attempted delivery while I was away, how do I schedule re-delivery?",
+        "Can you hold my package at the local carrier pickup facility?",
+        "Customs clearance is delaying my international package delivery",
+        "Why is my package return to sender or undeliverable?",
+        "mera order deliver nahi hua abhi tak delivery boy ka number chahiye",
+        "package tracking shows delivered but mujhe nahi mila",
+        "delivery address change karna hai dispatch hone se pehle",
+        "parcel damaged condition me aaya hai box open tha",
+        "I want to reschedule the delivery of my shipment to tomorrow",
+        "Driver dropped the package at the wrong apartment door",
+        "How do I provide specific gate entry instructions for the delivery courier?",
+        "Tracking number returns invalid or shipment information not found",
+        "Can I choose a specific weekend morning delivery time window?",
+        "Signature was required but nobody rang our doorbell for package delivery",
     ],
 }
 

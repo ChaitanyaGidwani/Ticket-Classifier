@@ -27,6 +27,10 @@ TEST_SET = [
     T("Any plans to support custom themes?", ["Feature Request"]),
     T("It'd really help to have a way to export data as PDF.", ["Feature Request"]),
     T("Please add keyboard shortcuts for common actions.", ["Feature Request"]),
+    # Delivery Issue
+    T("I want to reschedule the delivery of my order to next Monday.", ["Delivery Issue"]),
+    T("The tracking link says delivered but the courier never arrived.", ["Delivery Issue"]),
+    T("My package arrived damaged with broken items inside.", ["Delivery Issue"]),
     # Urgent singles
     T("URGENT: our payment failed and the service will be suspended today.", ["Billing"], True),
     T("Just a quick suggestion: add a search bar to the history page.", ["Feature Request"]),
@@ -37,6 +41,7 @@ TEST_SET = [
     T("The login page throws an error. It would also be great to have a dark mode.", ["Technical Support", "Feature Request"]),
     T("Our production dashboard is down and we need this fixed ASAP. Plus, can you add Slack alerts?", ["Technical Support", "Feature Request"], True),
     T("Someone changed my password and I can't log in anymore. I'm also being billed for a plan I never bought.", ["Security", "Billing"], True),
+    T("My package never arrived at my address. Plus, why was I charged twice for shipping?", ["Delivery Issue", "Billing"]),
 ]
 
 # (ticket A, ticket B, is_duplicate)
@@ -44,7 +49,9 @@ DUP_PAIRS = [
     ("I was charged twice this month", "My card got billed two times for this month", True),
     ("The app crashes when I open it", "Every time I launch the application it crashes", True),
     ("Please cancel my subscription", "I would like to terminate my plan", True),
+    ("I want to reschedule my delivery", "Can I change the delivery date for my shipment?", True),
     ("I was charged twice this month", "The app crashes when I open it", False),
     ("Please add dark mode", "How do I enable two-factor authentication?", False),
     ("I want a refund", "Can you add an Android app?", False),
+    ("Where is my package delivery?", "Can you add Slack notifications?", False),
 ]
