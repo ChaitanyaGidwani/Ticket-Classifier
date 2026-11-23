@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS and Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local archives and redundant unzipped folders
+*.zip
+ticket-classifier/
