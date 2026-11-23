@@ -80,12 +80,15 @@ def run_heldout_eval(
             "true_urgent": t["urgent"],
             "pred_urgent": r["urgent"],
             "urgent_correct": t["urgent"] == r["urgent"],
+            "urgent_match": t["urgent"] == r["urgent"],
             "urgent_reason": r.get("urgent_reason", ""),
             "uncertain": r["uncertain"],
             "score": round(r["scores"][r["primary"]], 3),
+            "primary_score": round(r["scores"][r["primary"]], 3),
             "margin": round(r["margin"], 3),
             "latency_ms": round(lat_ms, 2),
             "is_multi": len(t["labels"]) > 1,
+            "is_multi_issue": len(t["labels"]) > 1,
         })
 
     rows_df = pd.DataFrame(rows)

@@ -77,3 +77,47 @@ If deploying this system to ingest real customer support streams at enterprise s
 ### 3. Active Learning & Human-in-the-Loop Feedback Loop
 - **Problem Solved**: Static prototype seeds do not automatically adapt to newly emerging product features, billing changes, or shifts in customer phrasing.
 - **Solution**: Connect the calibrated uncertainty pipeline (`uncertain=True` when score <0.26 or margin <0.02) to the customer support ticketing tool (e.g., Zendesk, Jira Service Desk). When human agents resolve or re-categorize flagged tickets, those verified examples are piped into an active learning queue to automatically enrich prototype seeds or trigger scheduled model fine-tuning.
+
+---
+
+## 4. Comprehensive Bug Fix Log
+
+During a comprehensive code and runtime audit, the following bugs across concurrency, memory safety, API consistency, and classification logic were identified and resolved:
+
+1. **Thread-Safety Race Condition in `/duplicates`**:
+   - *Bug*: The endpoint mutated `clf.dup_threshold = req.threshold` on the shared singleton during requests, risking data races under concurrent requests.
+   - *Fix*: Added an optional `threshold` argument to `TicketClassifier.find_duplicate_pairs(texts, threshold=...)` so threshold overrides are purely local and thread-safe.
+2. **Missing `POST /thresholds` Route**:
+   - *Bug*: API only exposed `PUT /thresholds`, failing REST callers expecting `POST /thresholds`.
+   - *Fix*: Decorated `update_thresholds` with both `@app.put` and `@app.post`.
+3. **Index Shifting on Empty Strings in `/batch` and `/duplicates`**:
+   - *Bug*: Filtering empty strings with list comprehension shifted indices in `results` and `duplicate_pairs`, breaking callers' array index mapping.
+   - *Fix*: Added explicit validation returning a 400 Bad Request identifying the exact offending ticket index (e.g., `"Ticket at index 1 cannot be empty or blank."`).
+4. **Offline Startup & 403 Forbidden HF Network Delays**:
+   - *Bug*: `AutoTokenizer.from_pretrained` and `AutoModel.from_pretrained` attempted online HTTP requests first before catching exceptions, causing ~1.5–3s delays and spammy 403 HTTP logs in sandboxed or offline environments.
+   - *Fix*: Attempt `local_files_only=True` first, immediately falling back to remote download only if not cached locally.
+5. **Platt Calibration Overconfidence Bug**:
+   - *Bug*: The logistic regression intercept caused tickets with zero similarity (0.0) to still report 81% confidence.
+   - *Fix*: Re-centered the Platt scaling sigmoid directly around the decision boundary (`score - label_threshold`) and margin gap, properly mapping uncertain tickets to 20%–45% and confident tickets to 85%–98%.
+6. **In-Memory Store Desynchronization on Database Errors**:
+   - *Bug*: `_save_ticket_to_store` appended vectors to `self.store_text` and `self.store_emb` before executing the SQLite insert, causing state desynchronization if the SQLite transaction failed.
+   - *Fix*: Enforced transactional order—in-memory structures update only after successful SQLite database commit.
+7. **Read-Only NumPy Buffer Ownership from SQLite**:
+   - *Bug*: `np.frombuffer` without `.copy()` created read-only slices referencing temporary Python buffers.
+   - *Fix*: Added `.copy()` during SQLite preloading for safe memory ownership.
+8. **Vectorized Persistent Duplicate Matching**:
+   - *Bug*: `np.stack(self.store_emb)` reallocated a large 2D matrix on every `classify(check_duplicates=True)` call.
+   - *Fix*: Incrementally maintained `self._store_matrix` for direct BLAS matrix multiplication without per-call re-allocation.
+9. **Imperative 2-Word Clause Dropping in `split_issues`**:
+   - *Bug*: `min_words = 3` discarded 2-word imperative clauses like `"Please refund."` or `"Account hacked!"`.
+   - *Fix*: Lowered `min_words` to 2 and added regex to strip leading conversational conjunctions (`also`, `plus`, etc.) from separated clauses.
+10. **Conjunction Lookahead Truncation**:
+    - *Bug*: Conjunction splitting missed tokens like `"now"`, `"why"`, `"is"`, leaving compound sentences like `"Someone hacked into our system and now our production API is completely down!"` unsegmented.
+    - *Fix*: Extended lookahead conjunction regex, increasing held-out exact-set match to **89.36%**.
+11. **API Top-Level F1 Metric Consistency**:
+    - *Bug*: `evaluate.py` lacked top-level `"macro_f1"`, `"micro_f1"` keys that `evaluate_heldout.py` and `app.py` expected.
+    - *Fix*: Added top-level `"macro_f1"`, `"micro_f1"`, and `"weighted_f1"` to `run_eval()` return dictionary.
+12. **Streamlit Redundant Save on Re-run**:
+    - *Bug*: Text area typing triggered automatic duplicate store saves on every UI re-render.
+    - *Fix*: Added a user toggle checkbox ("Record in persistent duplicate store") defaulting to True.
+

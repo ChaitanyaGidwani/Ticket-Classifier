@@ -220,8 +220,8 @@ ALL_HELDOUT_DATA = [
 
 # Deterministic Stratified-style split into VALIDATION_SET and TEST_SET_HELDOUT:
 # Alternating elements ensures identical class balance, multi-issue ratio, and hard cases across both sets.
-VALIDATION_SET = ALL_HELDOUT_DATA[0::2]   # 69 tickets
-TEST_SET_HELDOUT = ALL_HELDOUT_DATA[1::2] # 69 tickets
+VALIDATION_SET = ALL_HELDOUT_DATA[0::2]   # 94 tickets
+TEST_SET_HELDOUT = ALL_HELDOUT_DATA[1::2] # 94 tickets
 
 # Held-out duplicate detection benchmark pairs (20 pairs)
 # Formatted as: (ticket_a, ticket_b, is_duplicate)

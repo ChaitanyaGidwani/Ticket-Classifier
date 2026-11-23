@@ -272,25 +272,26 @@ def classify_ticket(req: ClassifyRequest):
 @app.post("/batch", response_model=BatchClassifyResponse, tags=["Classification"])
 def batch_classify(req: BatchClassifyRequest):
     clf = get_clf()
-    filtered_texts = [t.strip() for t in req.texts if t and t.strip()]
-    if not filtered_texts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid non-empty ticket texts provided in batch.",
-        )
+    for i, t in enumerate(req.texts):
+        if not t or not t.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ticket at index {i} cannot be empty or blank.",
+            )
 
-    results = [clf.classify(t, check_duplicates=req.check_duplicates) for t in filtered_texts]
+    cleaned_texts = [t.strip() for t in req.texts]
+    results = [clf.classify(t, check_duplicates=req.check_duplicates) for t in cleaned_texts]
 
     dup_pairs: List[BatchDuplicatePair] = []
-    if req.detect_batch_duplicates and len(filtered_texts) >= 2:
-        pairs = clf.find_duplicate_pairs(filtered_texts)
+    if req.detect_batch_duplicates and len(cleaned_texts) >= 2:
+        pairs = clf.find_duplicate_pairs(cleaned_texts)
         for i, j, sim in pairs:
             dup_pairs.append(
                 BatchDuplicatePair(
                     index_a=i,
                     index_b=j,
-                    ticket_a=filtered_texts[i],
-                    ticket_b=filtered_texts[j],
+                    ticket_a=cleaned_texts[i],
+                    ticket_b=cleaned_texts[j],
                     similarity=round(sim, 4),
                 )
             )
@@ -305,33 +306,35 @@ def batch_classify(req: BatchClassifyRequest):
 @app.post("/duplicates", response_model=DuplicateSearchResponse, tags=["Duplicates"])
 def find_duplicates(req: DuplicateSearchRequest):
     clf = get_clf()
-    filtered_texts = [t.strip() for t in req.texts if t and t.strip()]
-    if len(filtered_texts) < 2:
+    for i, t in enumerate(req.texts):
+        if not t or not t.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ticket at index {i} cannot be empty or blank.",
+            )
+
+    cleaned_texts = [t.strip() for t in req.texts]
+    if len(cleaned_texts) < 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least 2 non-empty tickets are required to search for duplicates.",
         )
 
-    orig_threshold = clf.dup_threshold
-    threshold_used = req.threshold if req.threshold is not None else orig_threshold
-    try:
-        clf.dup_threshold = threshold_used
-        pairs = clf.find_duplicate_pairs(filtered_texts)
-    finally:
-        clf.dup_threshold = orig_threshold
+    threshold_used = req.threshold if req.threshold is not None else clf.dup_threshold
+    pairs = clf.find_duplicate_pairs(cleaned_texts, threshold=threshold_used)
 
     dup_pairs = [
         BatchDuplicatePair(
             index_a=i,
             index_b=j,
-            ticket_a=filtered_texts[i],
-            ticket_b=filtered_texts[j],
+            ticket_a=cleaned_texts[i],
+            ticket_b=cleaned_texts[j],
             similarity=round(sim, 4),
         )
         for i, j, sim in pairs
     ]
     return DuplicateSearchResponse(
-        total_candidates=len(filtered_texts),
+        total_candidates=len(cleaned_texts),
         threshold_used=threshold_used,
         duplicate_pairs=dup_pairs,
     )
@@ -351,12 +354,13 @@ def get_thresholds():
 
 
 @app.put("/thresholds", response_model=ThresholdsConfig, tags=["Configuration"])
+@app.post("/thresholds", response_model=ThresholdsConfig, tags=["Configuration"])
 def update_thresholds(cfg: ThresholdsConfig):
     clf = get_clf()
     clf.label_threshold = cfg.label_threshold
     clf.uncertain_below = cfg.uncertain_below
     clf.margin_threshold = cfg.margin_threshold
-    clf.urgent_threshold = cfg.urgent_threshold
+    clf.urgent_threshold = clf.urgent_threshold if cfg.urgent_threshold is None else cfg.urgent_threshold
     clf.dup_threshold = cfg.dup_threshold
     clf.temperature = cfg.temperature
     return cfg

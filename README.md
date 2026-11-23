@@ -6,7 +6,7 @@ A production-hardened, CPU-optimized AI application that automatically categoriz
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-INT8_Quantized-brightgreen.svg)](https://onnxruntime.ai)
-[![Tests Passing](https://img.shields.io/badge/tests-16%20passed-success.svg)](https://pytest.org)
+[![Tests Passing](https://img.shields.io/badge/tests-19%20passed-success.svg)](https://pytest.org)
 
 ---
 
@@ -35,15 +35,15 @@ The table below reports exact empirical metrics generated directly by `evaluate.
 | Metric | Before (Baseline Step 1) | After (Refined & Tuned) | Delta / Impact |
 |---|:---:|:---:|:---:|
 | **Primary-Label Accuracy** | 87.23% (82/94) | **93.62%** (88/94) | **+6.39% absolute gain** |
-| **Exact-Set Match (Multi-Label)** | 73.40% (69/94) | **88.30%** (83/94) | **+14.90% absolute gain** |
-| **Macro F1 Score** | 0.819 | **0.912** | **+0.093 improvement** |
+| **Exact-Set Match (Multi-Label)** | 73.40% (69/94) | **89.36%** (84/94) | **+15.96% absolute gain** |
+| **Macro F1 Score** | 0.819 | **0.916** | **+0.097 improvement** |
 | **Urgency Precision / Recall** | 0.42 / 0.83 (7 FPs) | **1.00 / 0.83** (0 FPs) | **0 false positives** (clean specificity) |
 | **Urgency F1 Score** | 0.56 | **0.91** | **+0.35 jump in F1** |
 | **Duplicate Detection Accuracy** | 100.00% (F1: 1.00) | **100.00%** (F1: 1.00) | Flawless separation (+0.54 margin) |
-| **Uncertainty Triage Rate** | 1.06% | **4.26%** (4/94) | Active routing with 91.1% accuracy on confident set |
-| **Median Latency (CPU, PyTorch)** | 2.92 ms | **2.82 ms** | Fast CPU inference |
+| **Uncertainty Triage Rate** | 1.06% | **4.26%** (4/94) | Active routing with 92.2% accuracy on confident set |
+| **Median Latency (CPU, PyTorch)** | 2.92 ms | **2.53 ms** | Fast CPU inference |
 | **Median Latency (CPU, ONNX INT8)**| N/A | **1.14 ms** | **~2.5x faster throughput** |
-| **P95 Latency (CPU)** | 3.93 ms | **3.95 ms** | Stable latency profile |
+| **P95 Latency (CPU)** | 3.93 ms | **3.76 ms** | Stable latency profile |
 
 ### 2. Original 28-Ticket Benchmark (22 Single-Issue + 6 Multi-Issue)
 *Note: Corrected dataset breakdown — 22 single-issue tickets and 6 multi-issue tickets (previously misstated as 20+8).*

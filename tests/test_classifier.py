@@ -101,7 +101,13 @@ def test_duplicate_detection(temp_classifier):
 
 
 def test_empty_and_very_long_input(temp_classifier):
-    """Verify handling of short and very long input (truncation to 512 tokens)."""
+    """Verify handling of empty, short, and very long input (truncation to 512 tokens)."""
+    # Empty string input
+    empty_res = temp_classifier.classify("   ")
+    assert empty_res["uncertain"] is True
+    assert empty_res["calibrated_confidence"] == 0.0
+    assert empty_res["labels"] == []
+
     # Very short input
     short_res = temp_classifier.classify("help")
     assert short_res["primary"] in LABELS

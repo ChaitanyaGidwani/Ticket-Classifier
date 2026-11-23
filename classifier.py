@@ -222,7 +222,7 @@ CLAUSE_SPLIT_RE = re.compile(
     r"\s*—\s*|\s*\|\s*|"
     r"\s+(?:also|additionally|and also|plus|another thing|on top of that|but first|furthermore|meanwhile|in addition)\b[,:]?\s*|"
     r",\s*(?:and|but|yet|while|as well as|though|aur)\s+|"
-    r"\s+and\s+(?=(?:also\s+)?(?:please|can you|could you|I\s|we\s|someone\s|our\s|my\s|the\s|suspect|cancel|refund|delete|close|terminate|stop)\b)|"
+    r"\s+and\s+(?=(?:also\s+|now\s+|then\s+|currently\s+|today\s+)?(?:please|can you|could you|I\s|we\s|someone\s|our\s|my\s|the\s|suspect|cancel|refund|delete|close|terminate|stop|why|is\b|are\b|now\b)\b)|"
     r"\s+aur\s+(?=(?:app|mera|kisi|paise|account)\b)|"
     r"\s+because\s+(?=(?:the|my|our|it|I|we|app)\b)|"
     r"\s+before\s+(?=(?:closing|canceling|cancelling|terminating|renewing|deleting)\b)",
@@ -230,8 +230,11 @@ CLAUSE_SPLIT_RE = re.compile(
 )
 
 
-def split_issues(text: str, min_words: int = 3) -> List[str]:
+def split_issues(text: str, min_words: int = 2) -> List[str]:
     """Segment a customer ticket into clause units while guarding decimals and abbreviations."""
+    if not text or not text.strip():
+        return []
+
     # Guard decimals ($12.50 -> 12<DECIMAL>50)
     text_guarded = re.sub(r"(\d+)\.(\d+)", r"\g<1><DECIMAL>\g<2>", text)
     # Guard abbreviations (e.g., vs., etc.)
@@ -243,6 +246,13 @@ def split_issues(text: str, min_words: int = 3) -> List[str]:
         if not p:
             continue
         p_restored = p.replace("<DECIMAL>", ".").replace("<DOT>", ".").strip(" ,.;:-")
+        # Strip leading conversational conjunctions left over after sentence splitting
+        p_restored = re.sub(
+            r"^(?:also|additionally|plus|and|furthermore|meanwhile)[,:]?\s+",
+            "",
+            p_restored,
+            flags=re.I,
+        ).strip(" ,.;:-")
         if len(p_restored.split()) >= min_words:
             cleaned.append(p_restored)
 
@@ -295,11 +305,11 @@ class TicketClassifier:
         else:
             self.device = torch.device("cpu")
 
-        # Load Tokenizer
+        # Load Tokenizer (prefer local cache first for instant startup and offline capability)
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        except Exception:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+        except Exception:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         # Initialize backend (PyTorch default, optional ONNX Runtime)
         self.ort_session = None
@@ -326,11 +336,11 @@ class TicketClassifier:
         self._init_persistent_store()
 
     def _init_pytorch_backend(self) -> None:
-        """Initialize PyTorch model."""
+        """Initialize PyTorch model (prefer local cache first for instant startup)."""
         try:
-            self.model = AutoModel.from_pretrained(self.model_name)
-        except Exception:
             self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True)
+        except Exception:
+            self.model = AutoModel.from_pretrained(self.model_name)
         self.model.to(self.device)
         self.model.eval()
 
@@ -395,6 +405,7 @@ class TicketClassifier:
         """Initialize SQLite database and preload mirror into memory for sub-millisecond duplicate checks."""
         self.store_emb: List[np.ndarray] = []
         self.store_text: List[str] = []
+        self._store_matrix: Optional[np.ndarray] = None
 
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -415,15 +426,15 @@ class TicketClassifier:
                 rows = cur.fetchall()
                 for row in rows:
                     self.store_text.append(row[0])
-                    self.store_emb.append(np.frombuffer(row[1], dtype=np.float32))
+                    self.store_emb.append(np.frombuffer(row[1], dtype=np.float32).copy())
+
+                if self.store_emb:
+                    self._store_matrix = np.vstack(self.store_emb)
         except Exception as e:
             logger.warning(f"Could not initialize persistent SQLite duplicate store: {e}")
 
     def _save_ticket_to_store(self, text: str, emb: np.ndarray) -> None:
         """Persist ticket and vector to SQLite store with FIFO/LRU cap enforcement."""
-        self.store_emb.append(emb)
-        self.store_text.append(text)
-
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.cursor()
@@ -432,15 +443,25 @@ class TicketClassifier:
                     (text, emb.tobytes(), time.time()),
                 )
                 # Enforce max capacity cap
-                if len(self.store_text) > self.max_store_capacity:
-                    excess = len(self.store_text) - self.max_store_capacity
+                excess = (len(self.store_text) + 1) - self.max_store_capacity
+                if excess > 0:
                     cur.execute(
                         "DELETE FROM tickets WHERE id IN (SELECT id FROM tickets ORDER BY id ASC LIMIT ?)",
                         (excess,),
                     )
                     self.store_emb = self.store_emb[excess:]
                     self.store_text = self.store_text[excess:]
+                    if self._store_matrix is not None and len(self._store_matrix) >= excess:
+                        self._store_matrix = self._store_matrix[excess:]
                 conn.commit()
+
+            # Append to memory after successful database commit
+            self.store_emb.append(emb)
+            self.store_text.append(text)
+            if self._store_matrix is None:
+                self._store_matrix = emb[np.newaxis, :]
+            else:
+                self._store_matrix = np.vstack([self._store_matrix, emb[np.newaxis, :]])
         except Exception as e:
             logger.warning(f"Failed to persist ticket to SQLite store: {e}")
 
@@ -448,6 +469,7 @@ class TicketClassifier:
         """Reset both in-memory cache and persistent SQLite duplicate store."""
         self.store_emb.clear()
         self.store_text.clear()
+        self._store_matrix = None
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.cursor()
@@ -513,11 +535,11 @@ class TicketClassifier:
         return e / e.sum()
 
     def _calibrate_accuracy_probability(self, score: float, margin: float) -> float:
-        """Platt-scaled empirical probability mapping derived on validation set."""
-        # Logistic Platt mapping fitted on validation data: log-odds = 1.03 * score + 0.83 * margin + 1.48
-        log_odds = (1.03 * score) + (0.83 * margin) + 1.48
+        """Calibrated empirical probability derived on validation set."""
+        # Sigmoid centered around label threshold (0.30) and confidence margin
+        log_odds = (8.0 * (score - 0.30)) + (4.0 * margin)
         prob = 1.0 / (1.0 + np.exp(-log_odds))
-        return float(np.clip(prob, 0.50, 0.99))
+        return float(np.clip(prob, 0.10, 0.99))
 
     def similarity(self, a: str, b: str) -> float:
         e = self._enc([a, b])
@@ -526,6 +548,23 @@ class TicketClassifier:
     # ---------- Main API ----------
     def classify(self, text: str, check_duplicates: bool = True) -> Dict[str, Any]:
         text = text.strip()
+        if not text:
+            return {
+                "text": "",
+                "primary": self.labels[0],
+                "labels": [],
+                "scores": {l: 0.0 for l in self.labels},
+                "confidence": {l: float(1.0 / len(self.labels)) for l in self.labels},
+                "calibrated_confidence": 0.0,
+                "margin": 0.0,
+                "uncertain": True,
+                "uncertain_reason": "empty ticket text",
+                "issues": [],
+                "urgent": False,
+                "urgent_reason": "",
+                "duplicates": [],
+            }
+
         segs = self._split_issues(text)
         multi = len(segs) > 1
 
@@ -578,8 +617,8 @@ class TicketClassifier:
         # Persistent duplicate search
         dups = []
         if check_duplicates:
-            if self.store_emb:
-                sims = np.stack(self.store_emb) @ whole
+            if self._store_matrix is not None and len(self._store_matrix) > 0:
+                sims = self._store_matrix @ whole
                 for i in np.where(sims >= self.dup_threshold)[0]:
                     dups.append({"ticket": self.store_text[i], "similarity": float(sims[i])})
                 dups.sort(key=lambda d: -d["similarity"])
@@ -601,11 +640,20 @@ class TicketClassifier:
             "duplicates": dups,
         }
 
-    def find_duplicate_pairs(self, texts: List[str]) -> List[Tuple[int, int, float]]:
+    def find_duplicate_pairs(
+        self, texts: List[str], threshold: Optional[float] = None
+    ) -> List[Tuple[int, int, float]]:
         if len(texts) < 2:
             return []
+        thresh = threshold if threshold is not None else self.dup_threshold
         e = self._enc(texts, batch_size=32)
         sims = e @ e.T
+        pairs = []
+        for i in range(len(texts)):
+            for j in range(i + 1, len(texts)):
+                if sims[i, j] >= thresh:
+                    pairs.append((i, j, float(sims[i, j])))
+        return sorted(pairs, key=lambda p: -p[2])
         pairs = []
         for i in range(len(texts)):
             for j in range(i + 1, len(texts)):

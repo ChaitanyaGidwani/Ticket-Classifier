@@ -87,11 +87,12 @@ with tab1:
         placeholder="Type or paste incoming support ticket text here...",
     )
 
-    col_btn, _ = st.columns([1, 4])
+    col_btn, col_chk = st.columns([1, 2])
     classify_clicked = col_btn.button("Classify Ticket", type="primary")
+    save_to_db = col_chk.checkbox("Record in persistent duplicate store", value=True)
 
     if (classify_clicked or text.strip()) and text.strip():
-        r = clf.classify(text, check_duplicates=True)
+        r = clf.classify(text, check_duplicates=save_to_db)
 
         st.divider()
         m1, m2, m3, m4 = st.columns(4)

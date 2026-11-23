@@ -95,6 +95,12 @@ def test_api_thresholds_workflow(client):
     assert res_put.status_code == 200
     assert res_put.json()["label_threshold"] == 0.33
 
+    # POST alias
+    cfg["label_threshold"] = 0.31
+    res_post = client.post("/thresholds", json=cfg)
+    assert res_post.status_code == 200
+    assert res_post.json()["label_threshold"] == 0.31
+
     # Restore
     cfg["label_threshold"] = 0.30
     client.put("/thresholds", json=cfg)
@@ -104,3 +110,28 @@ def test_api_reset_history(client):
     res = client.post("/history/reset")
     assert res.status_code == 200
     assert res.json()["stored_tickets_count"] == 0
+
+
+def test_api_batch_empty_item_error(client):
+    # Empty string inside batch should return 400
+    payload = {"texts": ["Valid ticket", "   ", "Another ticket"]}
+    res = client.post("/batch", json=payload)
+    assert res.status_code == 400
+    assert "index 1" in res.json()["detail"]
+
+
+def test_api_duplicates_empty_item_error(client):
+    payload = {"texts": ["Valid ticket", "   "]}
+    res = client.post("/duplicates", json=payload)
+    assert res.status_code == 400
+    assert "index 1" in res.json()["detail"]
+
+
+def test_api_evaluate(client):
+    res = client.get("/evaluate")
+    assert res.status_code == 200
+    data = res.json()
+    assert "exact_match" in data
+    assert "primary_acc" in data
+    assert "macro_f1" in data
+    assert "overall" in data
